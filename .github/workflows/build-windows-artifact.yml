@@ -1,0 +1,46 @@
+name: Windows build artifact
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: 'recursive'
+    - uses: aseprite/get-ninja@main
+    - uses: TheMrMilchmann/setup-msvc-dev@v4
+      with:
+        arch: x64
+    - name: Install Skia
+      shell: bash
+      run: |
+        this_dir=$(cygpath "${{ github.workspace }}")
+        skia_url=$(source "$this_dir/laf/misc/skia-url.sh" | xargs)
+        skia_file=$(basename "$skia_url")
+        curl --ssl-revoke-best-effort -L -o "$skia_file" "$skia_url"
+        unzip "$skia_file" -d skia
+    - name: Generate build files
+      shell: bash
+      run: |
+        cmake -S . -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DENABLE_CCACHE=OFF \
+          -DLAF_BACKEND=skia \
+          -DSKIA_DIR=$(realpath skia) \
+          -DSKIA_LIBRARY_DIR=$(realpath skia/out/Release-x64)
+    - name: Compile
+      shell: bash
+      run: cmake --build build --parallel
+    - uses: actions/upload-artifact@v4
+      with:
+        name: aseprite-windows
+        path: |
+          build/bin/aseprite.exe
+          build/bin/data/**
+        if-no-files-found: error
